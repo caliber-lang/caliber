@@ -30,6 +30,22 @@ static int is_kw(parser_t *p, const char *kw) {
 
 static node_t *parse_expr(parser_t *p);
 
+static node_t *parse_call_args(parser_t *p, node_t *call) {
+    adv(p);
+    if (p->cur->type != TOK_RPAREN) {
+        for (;;) {
+            node_t *arg = parse_expr(p);
+            node_add_child(call, arg);
+            if (call->child_count > 6) perror_exit("too many call arguments");
+            if (p->cur->type == TOK_COMMA) { adv(p); continue; }
+            break;
+        }
+    }
+    expect_type(p, TOK_RPAREN);
+    adv(p);
+    return call;
+}
+
 static node_t *parse_factor(parser_t *p) {
     node_t *node;
 
@@ -54,9 +70,15 @@ static node_t *parse_factor(parser_t *p) {
         return node;
     }
     if (p->cur->type == TOK_ID) {
-        node = node_new(NODE_IDENT);
-        node->name = strdup(p->cur->value);
+        char *name = strdup(p->cur->value);
         adv(p);
+        if (p->cur->type == TOK_LPAREN) {
+            node = node_new(NODE_CALL);
+            node->name = name;
+            return parse_call_args(p, node);
+        }
+        node = node_new(NODE_IDENT);
+        node->name = name;
         return node;
     }
     if (p->cur->type == TOK_LPAREN) {
@@ -108,6 +130,7 @@ static node_t *parse_expr(parser_t *p) {
 static int starts_stmt(parser_t *p) {
     if (is_kw(p, "var")) return 1;
     if (is_kw(p, "print")) return 1;
+    if (is_kw(p, "return")) return 1;
     if (p->cur->type == TOK_AT) return 1;
     if (p->cur->type == TOK_ID) return 1;
     return 0;
@@ -126,6 +149,14 @@ static node_t *parse_stmt(parser_t *p) {
         node_t *expr = parse_expr(p);
         node = node_new(NODE_VARDECL);
         node->name = name;
+        node->left = expr;
+        return node;
+    }
+
+    if (is_kw(p, "return")) {
+        adv(p);
+        node_t *expr = parse_expr(p);
+        node = node_new(NODE_RETURN);
         node->left = expr;
         return node;
     }
@@ -191,11 +222,46 @@ static node_t *parse_funcdef(parser_t *p) {
     expect_type(p, TOK_ID);
     char *name = strdup(p->cur->value);
     adv(p);
-    expect_type(p, TOK_EQUALS);
-    adv(p);
 
     node_t *fn = node_new(NODE_FUNCDEF);
     fn->name = name;
+    fn->param_count = 0;
+
+    if (p->cur->type == TOK_LPAREN) {
+        adv(p);
+        if (p->cur->type != TOK_RPAREN) {
+            for (;;) {
+                if (fn->param_count >= MAX_PARAMS) perror_exit("too many params");
+                expect_type(p, TOK_ID);
+                char *pname = strdup(p->cur->value);
+                adv(p);
+                char *ptype = NULL;
+                if (p->cur->type == TOK_COLON) {
+                    adv(p);
+                    expect_type(p, TOK_ID);
+                    ptype = strdup(p->cur->value);
+                    adv(p);
+                }
+                fn->param_names[fn->param_count] = pname;
+                fn->param_types[fn->param_count] = ptype;
+                fn->param_count++;
+                if (p->cur->type == TOK_COMMA) { adv(p); continue; }
+                break;
+            }
+        }
+        expect_type(p, TOK_RPAREN);
+        adv(p);
+    }
+
+    if (p->cur->type == TOK_ARROW) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        fn->ret_type = strdup(p->cur->value);
+        adv(p);
+    }
+
+    expect_type(p, TOK_EQUALS);
+    adv(p);
 
     while (starts_stmt(p) && !is_kw(p, "def")) {
         node_t *stmt = parse_stmt(p);

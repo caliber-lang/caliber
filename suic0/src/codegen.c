@@ -14,6 +14,12 @@ static int sym_count;
 static char *string_pool[256];
 static int string_count;
 
+static char current_epilogue[128];
+
+static const char *arg_regs[6] = {
+    "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"
+};
+
 static void declare_symbol(const char *name) {
     for (int i = 0; i < sym_count; i++) {
         if (strcmp(syms[i].name, name) == 0) return;
@@ -31,12 +37,18 @@ static int find_symbol(const char *name) {
     exit(1);
 }
 
+static void collect_symbols_stmt(node_t *stmt) {
+    if (stmt->type == NODE_VARDECL || stmt->type == NODE_ANCHORDECL) {
+        declare_symbol(stmt->name);
+    }
+}
+
 static void collect_symbols(node_t *fn) {
+    for (int i = 0; i < fn->param_count; i++) {
+        declare_symbol(fn->param_names[i]);
+    }
     for (int i = 0; i < fn->child_count; i++) {
-        node_t *stmt = fn->children[i];
-        if (stmt->type == NODE_VARDECL || stmt->type == NODE_ANCHORDECL) {
-            declare_symbol(stmt->name);
-        }
+        collect_symbols_stmt(fn->children[i]);
     }
 }
 
@@ -88,6 +100,17 @@ static void codegen_expr(FILE *f, node_t *e) {
                     fprintf(f, "    idivq %%rbx\n");
                     break;
             }
+            break;
+        }
+        case NODE_CALL: {
+            for (int i = 0; i < e->child_count; i++) {
+                codegen_expr(f, e->children[i]);
+                fprintf(f, "    pushq %%rax\n");
+            }
+            for (int i = e->child_count - 1; i >= 0; i--) {
+                fprintf(f, "    popq %s\n", arg_regs[i]);
+            }
+            fprintf(f, "    call %s\n", e->name);
             break;
         }
         default:
@@ -143,6 +166,11 @@ static void codegen_stmt(FILE *f, node_t *s) {
             }
             break;
         }
+        case NODE_RETURN: {
+            codegen_expr(f, s->left);
+            fprintf(f, "    jmp %s\n", current_epilogue);
+            break;
+        }
         default:
             fprintf(stderr, "codegen error: bad stmt node\n");
             exit(1);
@@ -157,18 +185,26 @@ static void codegen_funcdef(FILE *f, node_t *fn) {
     if (stack_size % 16 != 0) stack_size += 16 - (stack_size % 16);
     if (stack_size == 0) stack_size = 16;
 
+    snprintf(current_epilogue, sizeof(current_epilogue), ".Lret_%s", fn->name);
+
     fprintf(f, "%s:\n", fn->name);
     fprintf(f, "    pushq %%rbp\n");
     fprintf(f, "    movq %%rsp, %%rbp\n");
     fprintf(f, "    subq $%d, %%rsp\n", stack_size);
 
+    for (int i = 0; i < fn->param_count; i++) {
+        int off = find_symbol(fn->param_names[i]);
+        fprintf(f, "    movq %s, -%d(%%rbp)\n", arg_regs[i], off);
+    }
+
     for (int i = 0; i < fn->child_count; i++) {
         codegen_stmt(f, fn->children[i]);
     }
 
+    fprintf(f, "    movl $0, %%eax\n");
+    fprintf(f, "%s:\n", current_epilogue);
     fprintf(f, "    movq %%rbp, %%rsp\n");
     fprintf(f, "    popq %%rbp\n");
-    fprintf(f, "    xorl %%eax, %%eax\n");
     fprintf(f, "    ret\n");
 }
 
