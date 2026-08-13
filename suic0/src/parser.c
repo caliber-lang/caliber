@@ -1,0 +1,225 @@
+#define _POSIX_C_SOURCE 200809L
+#include "parser.h"
+#include "lexer.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    lexer_t *lex;
+    token_t *cur;
+} parser_t;
+
+static void perror_exit(const char *msg) {
+    fprintf(stderr, "parse error: %s\n", msg);
+    exit(1);
+}
+
+static void adv(parser_t *p) {
+    token_free(p->cur);
+    p->cur = lexer_next(p->lex);
+}
+
+static void expect_type(parser_t *p, token_type_t t) {
+    if (p->cur->type != t) perror_exit("unexpected token type");
+}
+
+static int is_kw(parser_t *p, const char *kw) {
+    return p->cur->type == TOK_KEYWORD && strcmp(p->cur->value, kw) == 0;
+}
+
+static node_t *parse_expr(parser_t *p);
+
+static node_t *parse_factor(parser_t *p) {
+    node_t *node;
+
+    if (p->cur->type == TOK_INT) {
+        node = node_new(NODE_INT);
+        node->ival = atol(p->cur->value);
+        adv(p);
+        return node;
+    }
+    if (p->cur->type == TOK_STRING) {
+        node = node_new(NODE_STRING);
+        node->sval = strdup(p->cur->value);
+        adv(p);
+        return node;
+    }
+    if (p->cur->type == TOK_AT) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        node = node_new(NODE_ANCHORREF);
+        node->name = strdup(p->cur->value);
+        adv(p);
+        return node;
+    }
+    if (p->cur->type == TOK_ID) {
+        node = node_new(NODE_IDENT);
+        node->name = strdup(p->cur->value);
+        adv(p);
+        return node;
+    }
+    if (p->cur->type == TOK_LPAREN) {
+        adv(p);
+        node = parse_expr(p);
+        expect_type(p, TOK_RPAREN);
+        adv(p);
+        return node;
+    }
+
+    perror_exit("expected factor");
+    return NULL;
+}
+
+static node_t *parse_term(parser_t *p) {
+    node_t *node = parse_factor(p);
+
+    while (p->cur->type == TOK_STAR || p->cur->type == TOK_SLASH) {
+        char op = p->cur->type == TOK_STAR ? '*' : '/';
+        adv(p);
+        node_t *right = parse_factor(p);
+        node_t *n = node_new(NODE_BINOP);
+        n->op = op;
+        n->left = node;
+        n->right = right;
+        node = n;
+    }
+
+    return node;
+}
+
+static node_t *parse_expr(parser_t *p) {
+    node_t *node = parse_term(p);
+
+    while (p->cur->type == TOK_PLUS || p->cur->type == TOK_MINUS) {
+        char op = p->cur->type == TOK_PLUS ? '+' : '-';
+        adv(p);
+        node_t *right = parse_term(p);
+        node_t *n = node_new(NODE_BINOP);
+        n->op = op;
+        n->left = node;
+        n->right = right;
+        node = n;
+    }
+
+    return node;
+}
+
+static int starts_stmt(parser_t *p) {
+    if (is_kw(p, "var")) return 1;
+    if (is_kw(p, "print")) return 1;
+    if (p->cur->type == TOK_AT) return 1;
+    if (p->cur->type == TOK_ID) return 1;
+    return 0;
+}
+
+static node_t *parse_stmt(parser_t *p) {
+    node_t *node;
+
+    if (is_kw(p, "var")) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        char *name = strdup(p->cur->value);
+        adv(p);
+        expect_type(p, TOK_COLONMINUS);
+        adv(p);
+        node_t *expr = parse_expr(p);
+        node = node_new(NODE_VARDECL);
+        node->name = name;
+        node->left = expr;
+        return node;
+    }
+
+    if (p->cur->type == TOK_AT) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        char *name = strdup(p->cur->value);
+        adv(p);
+
+        if (p->cur->type == TOK_COLONMINUS) {
+            adv(p);
+            if (!is_kw(p, "alloc")) perror_exit("expected alloc");
+            adv(p);
+            node_t *expr = parse_expr(p);
+            node = node_new(NODE_ANCHORDECL);
+            node->name = name;
+            node->left = expr;
+            return node;
+        }
+
+        if (p->cur->type == TOK_COLONEQUAL) {
+            adv(p);
+            node_t *expr = parse_expr(p);
+            node = node_new(NODE_MUTATION);
+            node->name = name;
+            node->op = '@';
+            node->left = expr;
+            return node;
+        }
+
+        perror_exit("expected <- or := after anchor");
+    }
+
+    if (p->cur->type == TOK_ID) {
+        char *name = strdup(p->cur->value);
+        adv(p);
+        expect_type(p, TOK_COLONEQUAL);
+        adv(p);
+        node_t *expr = parse_expr(p);
+        node = node_new(NODE_MUTATION);
+        node->name = name;
+        node->op = 0;
+        node->left = expr;
+        return node;
+    }
+
+    if (is_kw(p, "print")) {
+        adv(p);
+        node_t *expr = parse_expr(p);
+        node = node_new(NODE_PRINT);
+        node->left = expr;
+        return node;
+    }
+
+    perror_exit("expected statement");
+    return NULL;
+}
+
+static node_t *parse_funcdef(parser_t *p) {
+    if (!is_kw(p, "def")) perror_exit("expected def");
+    adv(p);
+    expect_type(p, TOK_ID);
+    char *name = strdup(p->cur->value);
+    adv(p);
+    expect_type(p, TOK_EQUALS);
+    adv(p);
+
+    node_t *fn = node_new(NODE_FUNCDEF);
+    fn->name = name;
+
+    while (starts_stmt(p) && !is_kw(p, "def")) {
+        node_t *stmt = parse_stmt(p);
+        node_add_child(fn, stmt);
+    }
+
+    return fn;
+}
+
+node_t *parser_parse(const char *source) {
+    parser_t p;
+    p.lex = lexer_new(source);
+    p.cur = lexer_next(p.lex);
+
+    node_t *prog = node_new(NODE_PROGRAM);
+
+    while (p.cur->type != TOK_EOF) {
+        if (!is_kw(&p, "def")) perror_exit("expected def at top level");
+        node_t *fn = parse_funcdef(&p);
+        node_add_child(prog, fn);
+    }
+
+    token_free(p.cur);
+    lexer_free(p.lex);
+
+    return prog;
+}

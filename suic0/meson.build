@@ -2,9 +2,14 @@ project('suic', 'c',
   version : '0.1.0',
   default_options : ['warning_level=3', 'c_std=c99'])
 
+add_project_arguments('-D_POSIX_C_SOURCE=200809L', language : 'c')
+
 sources = [
   'src/main.c',
   'src/lexer.c',
+  'src/ast.c',
+  'src/parser.c',
+  'src/codegen.c',
   'src/utils.c',
 ]
 

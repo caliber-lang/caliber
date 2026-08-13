@@ -1,9 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include "lexer.h"
-#include "utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
 
 lexer_t *lexer_new(const char *source) {
     lexer_t *lex = malloc(sizeof(lexer_t));
@@ -18,10 +18,6 @@ static char current_char(lexer_t *lex) {
     return lex->source[lex->pos];
 }
 
-static char peek_char(lexer_t *lex) {
-    return lex->source[lex->pos + 1];
-}
-
 static void advance(lexer_t *lex) {
     if (current_char(lex) == '\n') {
         lex->line++;
@@ -33,7 +29,7 @@ static void advance(lexer_t *lex) {
 }
 
 static void skip_whitespace(lexer_t *lex) {
-    while (isspace(current_char(lex))) {
+    while (isspace((unsigned char)current_char(lex))) {
         advance(lex);
     }
 }
@@ -56,65 +52,72 @@ static token_t *make_token(token_type_t type, const char *value) {
 static token_t *read_id_or_keyword(lexer_t *lex) {
     char buf[256];
     int i = 0;
-    
-    while (isalnum(current_char(lex)) || current_char(lex) == '_') {
+
+    while (isalnum((unsigned char)current_char(lex)) || current_char(lex) == '_') {
         buf[i++] = current_char(lex);
         advance(lex);
     }
     buf[i] = '\0';
-    
-    // check if keyword
-    if (strcmp(buf, "def") == 0 || strcmp(buf, "data") == 0 ||
-        strcmp(buf, "var") == 0 || strcmp(buf, "if") == 0 ||
-        strcmp(buf, "then") == 0 || strcmp(buf, "else") == 0 ||
-        strcmp(buf, "match") == 0 || strcmp(buf, "with") == 0) {
-        return make_token(TOK_KEYWORD, buf);
+
+    static const char *keywords[] = {
+        "def", "data", "var", "if", "then", "else", "match", "with",
+        "import", "type", "do", "for", "while", "let", "print", "alloc", NULL
+    };
+
+    for (int k = 0; keywords[k]; k++) {
+        if (strcmp(buf, keywords[k]) == 0) {
+            return make_token(TOK_KEYWORD, buf);
+        }
     }
-    
+
     return make_token(TOK_ID, buf);
 }
 
 static token_t *read_number(lexer_t *lex) {
     char buf[256];
     int i = 0;
-    
-    while (isdigit(current_char(lex))) {
+
+    while (isdigit((unsigned char)current_char(lex))) {
         buf[i++] = current_char(lex);
         advance(lex);
     }
     buf[i] = '\0';
-    
+
     return make_token(TOK_INT, buf);
 }
 
 static token_t *read_string(lexer_t *lex) {
-    advance(lex);  // skip opening "
+    advance(lex);
     char buf[1024];
     int i = 0;
-    
+
     while (current_char(lex) != '"' && current_char(lex) != '\0') {
         buf[i++] = current_char(lex);
         advance(lex);
     }
     buf[i] = '\0';
-    
-    advance(lex);  // skip closing "
+
+    advance(lex);
     return make_token(TOK_STRING, buf);
 }
 
 token_t *lexer_next(lexer_t *lex) {
-    skip_whitespace(lex);
-    skip_comment(lex);
-    skip_whitespace(lex);
-    
+    for (;;) {
+        skip_whitespace(lex);
+        if (current_char(lex) == ';') {
+            skip_comment(lex);
+            continue;
+        }
+        break;
+    }
+
     char c = current_char(lex);
-    
+
     if (c == '\0') return make_token(TOK_EOF, NULL);
-    if (isalpha(c) || c == '_') return read_id_or_keyword(lex);
-    if (isdigit(c)) return read_number(lex);
+    if (isalpha((unsigned char)c) || c == '_') return read_id_or_keyword(lex);
+    if (isdigit((unsigned char)c)) return read_number(lex);
     if (c == '"') return read_string(lex);
-    
-    // single/double char operators
+
     if (c == '@') { advance(lex); return make_token(TOK_AT, "@"); }
     if (c == ':') {
         advance(lex);
@@ -150,7 +153,7 @@ token_t *lexer_next(lexer_t *lex) {
             advance(lex);
             return make_token(TOK_EQ, "==");
         }
-        return make_token(TOK_KEYWORD, "=");
+        return make_token(TOK_EQUALS, "=");
     }
     if (c == '!') {
         advance(lex);
@@ -158,9 +161,10 @@ token_t *lexer_next(lexer_t *lex) {
             advance(lex);
             return make_token(TOK_NEQ, "!=");
         }
+        fprintf(stderr, "unexpected character: !\n");
+        exit(1);
     }
-    
-    // single char tokens
+
     if (c == '.') { advance(lex); return make_token(TOK_DOT, "."); }
     if (c == '(') { advance(lex); return make_token(TOK_LPAREN, "("); }
     if (c == ')') { advance(lex); return make_token(TOK_RPAREN, ")"); }
@@ -181,7 +185,7 @@ token_t *lexer_next(lexer_t *lex) {
         }
         return make_token(TOK_GT, ">");
     }
-    
+
     fprintf(stderr, "unexpected character: %c\n", c);
     exit(1);
 }
@@ -194,4 +198,40 @@ void lexer_free(lexer_t *lex) {
 void token_free(token_t *tok) {
     if (tok->value) free(tok->value);
     free(tok);
+}
+
+const char *token_type_name(token_type_t type) {
+    switch (type) {
+        case TOK_EOF: return "EOF";
+        case TOK_KEYWORD: return "KEYWORD";
+        case TOK_ID: return "ID";
+        case TOK_INT: return "INT";
+        case TOK_STRING: return "STRING";
+        case TOK_EQUALS: return "EQUALS";
+        case TOK_AT: return "AT";
+        case TOK_COLON: return "COLON";
+        case TOK_COLONEQUAL: return "COLONEQUAL";
+        case TOK_ARROW: return "ARROW";
+        case TOK_COLONMINUS: return "COLONMINUS";
+        case TOK_DOT: return "DOT";
+        case TOK_LPAREN: return "LPAREN";
+        case TOK_RPAREN: return "RPAREN";
+        case TOK_LBRACE: return "LBRACE";
+        case TOK_RBRACE: return "RBRACE";
+        case TOK_LBRACKET: return "LBRACKET";
+        case TOK_RBRACKET: return "RBRACKET";
+        case TOK_COMMA: return "COMMA";
+        case TOK_PIPE: return "PIPE";
+        case TOK_PLUS: return "PLUS";
+        case TOK_MINUS: return "MINUS";
+        case TOK_STAR: return "STAR";
+        case TOK_SLASH: return "SLASH";
+        case TOK_EQ: return "EQ";
+        case TOK_NEQ: return "NEQ";
+        case TOK_LT: return "LT";
+        case TOK_GT: return "GT";
+        case TOK_LTE: return "LTE";
+        case TOK_GTE: return "GTE";
+        default: return "UNKNOWN";
+    }
 }

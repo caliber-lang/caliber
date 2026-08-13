@@ -1,0 +1,10 @@
+def main =
+    var x <- 5
+    var y <- 10
+    print (x + y)
+    print "hello sui"
+
+    @a <- alloc 42
+    print @a
+    @a := 99
+    print @a
