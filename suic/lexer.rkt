@@ -5,54 +5,54 @@
 
 (provide tokenize)
 
-(define-tokens basic-tokens (ID INT STRING KEYWORD))
+(define-tokens basic-tokens (id int string keyword))
 (define-empty-tokens delims (
-  LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
-  DOT COLON COLONEQUAL ARROW PIPE COMMA
-  AT COLONMINUS EOF))
+  lparen rparen lbrace rbrace lbracket rbracket
+  dot colon colonequal arrow pipe comma
+  at colonminus eof))
 
 (define tokenize
   (lexer
-    [(eof) (token-EOF)]
+    [(eof) (token-eof)]
     
     ;; whitespace
     [(:+ whitespace) (tokenize input-port)]
     
     ;; comments
-    ["--" (:* (char-complement #\newline)) (tokenize input-port)]
+    [(:seq ";" (:* (char-complement #\newline))) (tokenize input-port)]
     
     ;; keywords
     [(:or "def" "data" "var" "if" "then" "else" "match" "with"
           "import" "type" "do" "for" "while" "let") 
-     (token-KEYWORD lexeme)]
+     (token-keyword lexeme)]
     
-    ;; identifiers & operators
-    [(:+ (:or alphanumeric "_")) (token-ID lexeme)]
+    ;; identifiers
+    [(:+ (:or alphanumeric "_")) (token-id lexeme)]
     
     ;; numbers
-    [(:+ digit) (token-INT (string->number lexeme))]
+    [(:+ digit) (token-int (string->number lexeme))]
     
     ;; strings
-    [#\" (:* (char-complement #\")) #\"
-     (token-STRING lexeme)]
+    [(:seq #\" (:* (char-complement #\")) #\")
+     (token-string lexeme)]
     
     ;; symbols
-    [#\@ (token-AT)]
-    [#\: (token-COLON)]
-    [":=" (token-COLONEQUAL)]
-    ["<-" (token-COLONMINUS)]
-    ["->" (token-ARROW)]
-    [#\. (token-DOT)]
-    [#\{ (token-LBRACE)]
-    [#\} (token-RBRACE)]
-    [#\[ (token-LBRACKET)]
-    [#\] (token-RBRACKET)]
-    [#\( (token-LPAREN)]
-    [#\) (token-RPAREN)]
-    [#\, (token-COMMA)]
-    [#\| (token-PIPE)]
+    [#\@ (token-at)]
+    [":" (token-colon)]
+    [":=" (token-colonequal)]
+    ["<-" (token-colonminus)]
+    ["->" (token-arrow)]
+    [#\. (token-dot)]
+    [#\{ (token-lbrace)]
+    [#\} (token-rbrace)]
+    [#\[ (token-lbracket)]
+    [#\] (token-rbracket)]
+    [#\( (token-lparen)]
+    [#\) (token-rparen)]
+    [#\, (token-comma)]
+    [#\| (token-pipe)]
     
     ;; operators
     [(:or "+" "-" "*" "/" "==" "!=" "<" ">" "<=" ">=")
-     (token-ID lexeme)]
+     (token-id lexeme)]
 ))
