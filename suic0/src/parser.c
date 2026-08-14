@@ -198,9 +198,12 @@ static node_t *parse_lvalue_tail(parser_t *p, node_t *base) {
         adv(p);
     }
 
+    node_t *field_target = node_new(NODE_FIELDACCESS);
+    field_target->left = target;
+    field_target->name = last_field;
+
     node_t *mut = node_new(NODE_MUTATION);
-    mut->left = target;
-    mut->name = last_field;
+    mut->left = field_target;
 
     expect_type(p, TOK_COLONEQUAL);
     adv(p);

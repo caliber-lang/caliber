@@ -126,6 +126,9 @@ static void codegen_expr(FILE *f, node_t *e) {
         case NODE_INT:
             fprintf(f, "    movq $%ld, %%rax\n", e->ival);
             break;
+        case NODE_STRING:
+            fprintf(f, "    leaq .LSTR%ld(%%rip), %%rax\n", e->ival);
+            break;
         case NODE_IDENT: {
             int off = find_symbol(e->name);
             fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
