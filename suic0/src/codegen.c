@@ -1,4 +1,5 @@
 #include "codegen.h"
+#include "typetab.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,8 +9,16 @@ typedef struct {
     int offset;
 } sym_t;
 
+typedef struct {
+    char *name;
+    char *type_name;
+} anchor_type_t;
+
 static sym_t syms[256];
 static int sym_count;
+
+static anchor_type_t anchor_types[256];
+static int anchor_type_count;
 
 static char *string_pool[256];
 static int string_count;
@@ -35,6 +44,46 @@ static int find_symbol(const char *name) {
     }
     fprintf(stderr, "codegen error: unknown symbol %s\n", name);
     exit(1);
+    return -1;
+}
+
+static void set_anchor_type(const char *name, const char *type_name) {
+    for (int i = 0; i < anchor_type_count; i++) {
+        if (strcmp(anchor_types[i].name, name) == 0) {
+            anchor_types[i].type_name = (char *)type_name;
+            return;
+        }
+    }
+    anchor_types[anchor_type_count].name = (char *)name;
+    anchor_types[anchor_type_count].type_name = (char *)type_name;
+    anchor_type_count++;
+}
+
+static const char *try_get_anchor_type(const char *name) {
+    for (int i = 0; i < anchor_type_count; i++) {
+        if (strcmp(anchor_types[i].name, name) == 0) return anchor_types[i].type_name;
+    }
+    return NULL;
+}
+
+static const char *get_anchor_type(const char *name) {
+    const char *t = try_get_anchor_type(name);
+    if (t) return t;
+    fprintf(stderr, "codegen error: no known type for anchor %s\n", name);
+    exit(1);
+    return NULL;
+}
+
+static const char *resolve_static_type(node_t *e) {
+    if (e->type == NODE_ANCHORREF) return get_anchor_type(e->name);
+    if (e->type == NODE_IDENT) return get_anchor_type(e->name);
+    if (e->type == NODE_FIELDACCESS) {
+        fprintf(stderr, "codegen error: nested field access not yet supported\n");
+        exit(1);
+    }
+    fprintf(stderr, "codegen error: cannot resolve static type of expression\n");
+    exit(1);
+    return NULL;
 }
 
 static void collect_symbols_stmt(node_t *stmt) {
@@ -65,6 +114,9 @@ static void collect_strings(node_t *n) {
     for (int i = 0; i < n->child_count; i++) {
         collect_strings(n->children[i]);
     }
+    for (int i = 0; i < n->field_count; i++) {
+        collect_strings(n->field_values[i]);
+    }
     collect_strings(n->left);
     collect_strings(n->right);
 }
@@ -82,7 +134,13 @@ static void codegen_expr(FILE *f, node_t *e) {
         case NODE_ANCHORREF: {
             int off = find_symbol(e->name);
             fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
-            fprintf(f, "    movq (%%rax), %%rax\n");
+            break;
+        }
+        case NODE_FIELDACCESS: {
+            const char *base_type = resolve_static_type(e->left);
+            int field_off = typetab_field_offset(base_type, e->name);
+            codegen_expr(f, e->left);
+            fprintf(f, "    movq %d(%%rax), %%rax\n", field_off);
             break;
         }
         case NODE_BINOP: {
@@ -114,7 +172,7 @@ static void codegen_expr(FILE *f, node_t *e) {
             break;
         }
         default:
-            fprintf(stderr, "codegen error: bad expr node\n");
+            fprintf(stderr, "codegen error: bad expr node (type=%d)\n", e->type);
             exit(1);
     }
 }
@@ -125,29 +183,53 @@ static void codegen_stmt(FILE *f, node_t *s) {
             codegen_expr(f, s->left);
             int off = find_symbol(s->name);
             fprintf(f, "    movq %%rax, -%d(%%rbp)\n", off);
+            if (s->left->type == NODE_ANCHORREF || s->left->type == NODE_IDENT) {
+                const char *t = try_get_anchor_type(s->left->name);
+                if (t) set_anchor_type(s->name, t);
+            }
             break;
         }
         case NODE_ANCHORDECL: {
-            codegen_expr(f, s->left);
-            fprintf(f, "    pushq %%rax\n");
-            fprintf(f, "    movl $8, %%edi\n");
+            node_t *lit = s->left;
+            type_info_t *info = typetab_lookup(lit->type_name);
+            if (!info) {
+                fprintf(stderr, "codegen error: unknown type %s\n", lit->type_name);
+                exit(1);
+            }
+
+            fprintf(f, "    movl $%d, %%edi\n", info->total_size);
             fprintf(f, "    call malloc\n");
-            fprintf(f, "    popq %%rbx\n");
-            fprintf(f, "    movq %%rbx, (%%rax)\n");
+            fprintf(f, "    movq %%rax, %%rbx\n");
+            fprintf(f, "    movq $0, (%%rbx)\n");
+
+            for (int i = 0; i < lit->field_count; i++) {
+                fprintf(f, "    pushq %%rbx\n");
+                codegen_expr(f, lit->field_values[i]);
+                fprintf(f, "    movq %%rax, %%rcx\n");
+                fprintf(f, "    popq %%rbx\n");
+                int field_off = typetab_field_offset(lit->type_name, lit->field_names[i]);
+                fprintf(f, "    movq %%rcx, %d(%%rbx)\n", field_off);
+            }
+
             int off = find_symbol(s->name);
-            fprintf(f, "    movq %%rax, -%d(%%rbp)\n", off);
+            fprintf(f, "    movq %%rbx, -%d(%%rbp)\n", off);
+            set_anchor_type(s->name, lit->type_name);
             break;
         }
         case NODE_MUTATION: {
-            if (s->op == '@') {
-                codegen_expr(f, s->left);
-                fprintf(f, "    movq %%rax, %%rbx\n");
-                int off = find_symbol(s->name);
-                fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
-                fprintf(f, "    movq %%rbx, (%%rax)\n");
+            if (s->left->type == NODE_FIELDACCESS) {
+                node_t *fa = s->left;
+                const char *base_type = resolve_static_type(fa->left);
+                int field_off = typetab_field_offset(base_type, fa->name);
+                codegen_expr(f, fa->left);
+                fprintf(f, "    pushq %%rax\n");
+                codegen_expr(f, s->right);
+                fprintf(f, "    movq %%rax, %%rcx\n");
+                fprintf(f, "    popq %%rax\n");
+                fprintf(f, "    movq %%rcx, %d(%%rax)\n", field_off);
             } else {
-                codegen_expr(f, s->left);
-                int off = find_symbol(s->name);
+                codegen_expr(f, s->right);
+                int off = find_symbol(s->left->name);
                 fprintf(f, "    movq %%rax, -%d(%%rbp)\n", off);
             }
             break;
@@ -172,13 +254,14 @@ static void codegen_stmt(FILE *f, node_t *s) {
             break;
         }
         default:
-            fprintf(stderr, "codegen error: bad stmt node\n");
+            fprintf(stderr, "codegen error: bad stmt node (type=%d)\n", s->type);
             exit(1);
     }
 }
 
 static void codegen_funcdef(FILE *f, node_t *fn) {
     sym_count = 0;
+    anchor_type_count = 0;
     collect_symbols(fn);
 
     int stack_size = sym_count * 8;
@@ -195,6 +278,9 @@ static void codegen_funcdef(FILE *f, node_t *fn) {
     for (int i = 0; i < fn->param_count; i++) {
         int off = find_symbol(fn->param_names[i]);
         fprintf(f, "    movq %s, -%d(%%rbp)\n", arg_regs[i], off);
+        if (fn->param_types[i]) {
+            set_anchor_type(fn->param_names[i], fn->param_types[i]);
+        }
     }
 
     for (int i = 0; i < fn->child_count; i++) {
@@ -209,6 +295,13 @@ static void codegen_funcdef(FILE *f, node_t *fn) {
 }
 
 void codegen_generate(node_t *program, const char *out_path) {
+    typetab_reset();
+    for (int i = 0; i < program->child_count; i++) {
+        if (program->children[i]->type == NODE_DATADEF) {
+            typetab_register(program->children[i]);
+        }
+    }
+
     string_count = 0;
     collect_strings(program);
 
@@ -228,7 +321,9 @@ void codegen_generate(node_t *program, const char *out_path) {
     fprintf(f, "    .globl main\n");
 
     for (int i = 0; i < program->child_count; i++) {
-        codegen_funcdef(f, program->children[i]);
+        if (program->children[i]->type == NODE_FUNCDEF) {
+            codegen_funcdef(f, program->children[i]);
+        }
     }
 
     fclose(f);

@@ -30,6 +30,37 @@ static int is_kw(parser_t *p, const char *kw) {
 
 static node_t *parse_expr(parser_t *p);
 
+static node_t *parse_struct_lit(parser_t *p, const char *type_name) {
+    node_t *node = node_new(NODE_STRUCTLIT);
+    node->type_name = strdup(type_name);
+    node->field_count = 0;
+
+    expect_type(p, TOK_LBRACE);
+    adv(p);
+
+    if (p->cur->type != TOK_RBRACE) {
+        for (;;) {
+            if (node->field_count >= MAX_FIELDS) perror_exit("too many fields in struct literal");
+            expect_type(p, TOK_ID);
+            char *fname = strdup(p->cur->value);
+            adv(p);
+            expect_type(p, TOK_COLON);
+            adv(p);
+            node_t *fval = parse_expr(p);
+            node->field_names[node->field_count] = fname;
+            node->field_values[node->field_count] = fval;
+            node->field_count++;
+            if (p->cur->type == TOK_COMMA) { adv(p); continue; }
+            break;
+        }
+    }
+
+    expect_type(p, TOK_RBRACE);
+    adv(p);
+
+    return node;
+}
+
 static node_t *parse_call_args(parser_t *p, node_t *call) {
     adv(p);
     if (p->cur->type != TOK_RPAREN) {
@@ -44,6 +75,19 @@ static node_t *parse_call_args(parser_t *p, node_t *call) {
     expect_type(p, TOK_RPAREN);
     adv(p);
     return call;
+}
+
+static node_t *parse_postfix(parser_t *p, node_t *node) {
+    while (p->cur->type == TOK_DOT) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        node_t *access = node_new(NODE_FIELDACCESS);
+        access->left = node;
+        access->name = strdup(p->cur->value);
+        adv(p);
+        node = access;
+    }
+    return node;
 }
 
 static node_t *parse_factor(parser_t *p) {
@@ -67,7 +111,7 @@ static node_t *parse_factor(parser_t *p) {
         node = node_new(NODE_ANCHORREF);
         node->name = strdup(p->cur->value);
         adv(p);
-        return node;
+        return parse_postfix(p, node);
     }
     if (p->cur->type == TOK_ID) {
         char *name = strdup(p->cur->value);
@@ -75,18 +119,19 @@ static node_t *parse_factor(parser_t *p) {
         if (p->cur->type == TOK_LPAREN) {
             node = node_new(NODE_CALL);
             node->name = name;
-            return parse_call_args(p, node);
+            node = parse_call_args(p, node);
+            return parse_postfix(p, node);
         }
         node = node_new(NODE_IDENT);
         node->name = name;
-        return node;
+        return parse_postfix(p, node);
     }
     if (p->cur->type == TOK_LPAREN) {
         adv(p);
         node = parse_expr(p);
         expect_type(p, TOK_RPAREN);
         adv(p);
-        return node;
+        return parse_postfix(p, node);
     }
 
     perror_exit("expected factor");
@@ -136,6 +181,34 @@ static int starts_stmt(parser_t *p) {
     return 0;
 }
 
+static node_t *parse_lvalue_tail(parser_t *p, node_t *base) {
+    node_t *target = base;
+    char *last_field = NULL;
+
+    while (p->cur->type == TOK_DOT) {
+        adv(p);
+        expect_type(p, TOK_ID);
+        if (last_field) {
+            node_t *access = node_new(NODE_FIELDACCESS);
+            access->left = target;
+            access->name = last_field;
+            target = access;
+        }
+        last_field = strdup(p->cur->value);
+        adv(p);
+    }
+
+    node_t *mut = node_new(NODE_MUTATION);
+    mut->left = target;
+    mut->name = last_field;
+
+    expect_type(p, TOK_COLONEQUAL);
+    adv(p);
+    mut->right = parse_expr(p);
+
+    return mut;
+}
+
 static node_t *parse_stmt(parser_t *p) {
     node_t *node;
 
@@ -171,36 +244,54 @@ static node_t *parse_stmt(parser_t *p) {
             adv(p);
             if (!is_kw(p, "alloc")) perror_exit("expected alloc");
             adv(p);
-            node_t *expr = parse_expr(p);
+            expect_type(p, TOK_ID);
+            char *type_name = strdup(p->cur->value);
+            adv(p);
+            node_t *lit = parse_struct_lit(p, type_name);
+            free(type_name);
             node = node_new(NODE_ANCHORDECL);
             node->name = name;
-            node->left = expr;
+            node->left = lit;
             return node;
+        }
+
+        node_t *base = node_new(NODE_ANCHORREF);
+        base->name = name;
+
+        if (p->cur->type == TOK_DOT) {
+            return parse_lvalue_tail(p, base);
         }
 
         if (p->cur->type == TOK_COLONEQUAL) {
             adv(p);
             node_t *expr = parse_expr(p);
             node = node_new(NODE_MUTATION);
-            node->name = name;
-            node->op = '@';
-            node->left = expr;
+            node->left = base;
+            node->name = NULL;
+            node->right = expr;
             return node;
         }
 
-        perror_exit("expected <- or := after anchor");
+        perror_exit("expected <-, :=, or . after anchor");
     }
 
     if (p->cur->type == TOK_ID) {
         char *name = strdup(p->cur->value);
         adv(p);
+        node_t *base = node_new(NODE_IDENT);
+        base->name = name;
+
+        if (p->cur->type == TOK_DOT) {
+            return parse_lvalue_tail(p, base);
+        }
+
         expect_type(p, TOK_COLONEQUAL);
         adv(p);
         node_t *expr = parse_expr(p);
         node = node_new(NODE_MUTATION);
-        node->name = name;
-        node->op = 0;
-        node->left = expr;
+        node->left = base;
+        node->name = NULL;
+        node->right = expr;
         return node;
     }
 
@@ -214,6 +305,46 @@ static node_t *parse_stmt(parser_t *p) {
 
     perror_exit("expected statement");
     return NULL;
+}
+
+static node_t *parse_datadef(parser_t *p) {
+    if (!is_kw(p, "data")) perror_exit("expected data");
+    adv(p);
+    expect_type(p, TOK_ID);
+    char *name = strdup(p->cur->value);
+    adv(p);
+    expect_type(p, TOK_EQUALS);
+    adv(p);
+    expect_type(p, TOK_LBRACE);
+    adv(p);
+
+    node_t *node = node_new(NODE_DATADEF);
+    node->name = name;
+    node->field_count = 0;
+
+    if (p->cur->type != TOK_RBRACE) {
+        for (;;) {
+            if (node->field_count >= MAX_FIELDS) perror_exit("too many fields in data def");
+            expect_type(p, TOK_ID);
+            char *fname = strdup(p->cur->value);
+            adv(p);
+            expect_type(p, TOK_COLON);
+            adv(p);
+            expect_type(p, TOK_ID);
+            char *ftype = strdup(p->cur->value);
+            adv(p);
+            node->field_names[node->field_count] = fname;
+            node->field_types[node->field_count] = ftype;
+            node->field_count++;
+            if (p->cur->type == TOK_COMMA) { adv(p); continue; }
+            break;
+        }
+    }
+
+    expect_type(p, TOK_RBRACE);
+    adv(p);
+
+    return node;
 }
 
 static node_t *parse_funcdef(parser_t *p) {
@@ -232,6 +363,11 @@ static node_t *parse_funcdef(parser_t *p) {
         if (p->cur->type != TOK_RPAREN) {
             for (;;) {
                 if (fn->param_count >= MAX_PARAMS) perror_exit("too many params");
+                int is_anchor_param = 0;
+                if (p->cur->type == TOK_AT) {
+                    is_anchor_param = 1;
+                    adv(p);
+                }
                 expect_type(p, TOK_ID);
                 char *pname = strdup(p->cur->value);
                 adv(p);
@@ -244,6 +380,7 @@ static node_t *parse_funcdef(parser_t *p) {
                 }
                 fn->param_names[fn->param_count] = pname;
                 fn->param_types[fn->param_count] = ptype;
+                (void)is_anchor_param;
                 fn->param_count++;
                 if (p->cur->type == TOK_COMMA) { adv(p); continue; }
                 break;
@@ -263,7 +400,7 @@ static node_t *parse_funcdef(parser_t *p) {
     expect_type(p, TOK_EQUALS);
     adv(p);
 
-    while (starts_stmt(p) && !is_kw(p, "def")) {
+    while (starts_stmt(p) && !is_kw(p, "def") && !is_kw(p, "data")) {
         node_t *stmt = parse_stmt(p);
         node_add_child(fn, stmt);
     }
@@ -279,9 +416,17 @@ node_t *parser_parse(const char *source) {
     node_t *prog = node_new(NODE_PROGRAM);
 
     while (p.cur->type != TOK_EOF) {
-        if (!is_kw(&p, "def")) perror_exit("expected def at top level");
-        node_t *fn = parse_funcdef(&p);
-        node_add_child(prog, fn);
+        if (is_kw(&p, "data")) {
+            node_t *dd = parse_datadef(&p);
+            node_add_child(prog, dd);
+            continue;
+        }
+        if (is_kw(&p, "def")) {
+            node_t *fn = parse_funcdef(&p);
+            node_add_child(prog, fn);
+            continue;
+        }
+        perror_exit("expected def or data at top level");
     }
 
     token_free(p.cur);

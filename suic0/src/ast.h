@@ -15,11 +15,15 @@ typedef enum {
     NODE_IDENT,
     NODE_ANCHORREF,
     NODE_BINOP,
+    NODE_DATADEF,
+    NODE_STRUCTLIT,
+    NODE_FIELDACCESS,
 } node_type_t;
 
 typedef struct node node_t;
 
 #define MAX_PARAMS 8
+#define MAX_FIELDS 16
 
 struct node {
     node_type_t type;
@@ -32,10 +36,18 @@ struct node {
     node_t **children;
     int child_count;
     int child_cap;
+
     char *param_names[MAX_PARAMS];
     char *param_types[MAX_PARAMS];
     int param_count;
     char *ret_type;
+
+    char *field_names[MAX_FIELDS];
+    char *field_types[MAX_FIELDS];
+    node_t *field_values[MAX_FIELDS];
+    int field_count;
+
+    char *type_name;
 };
 
 node_t *node_new(node_type_t type);
