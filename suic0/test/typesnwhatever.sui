@@ -1,0 +1,14 @@
+data User = {
+    name: String,
+    age: Int
+}
+
+def main =
+    @alice <- alloc User { name: "Alice", age: 25 }
+    print @alice.age
+
+    @alice.age := 26
+    print @alice.age
+
+    var a <- @alice
+    print a.age
