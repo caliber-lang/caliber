@@ -9,6 +9,7 @@ sources = [
   'src/lexer.c',
   'src/ast.c',
   'src/parser.c',
+  'src/typetab.c',
   'src/codegen.c',
   'src/utils.c',
 ]
