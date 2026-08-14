@@ -29,6 +29,7 @@ static int is_kw(parser_t *p, const char *kw) {
 }
 
 static node_t *parse_expr(parser_t *p);
+static node_t *parse_stmt(parser_t *p);
 
 static node_t *parse_struct_lit(parser_t *p, const char *type_name) {
     node_t *node = node_new(NODE_STRUCTLIT);
@@ -155,7 +156,7 @@ static node_t *parse_term(parser_t *p) {
     return node;
 }
 
-static node_t *parse_expr(parser_t *p) {
+static node_t *parse_addsub(parser_t *p) {
     node_t *node = parse_term(p);
 
     while (p->cur->type == TOK_PLUS || p->cur->type == TOK_MINUS) {
@@ -172,10 +173,45 @@ static node_t *parse_expr(parser_t *p) {
     return node;
 }
 
+static const char *cmp_op_str(token_type_t t) {
+    switch (t) {
+        case TOK_EQ: return "==";
+        case TOK_NEQ: return "!=";
+        case TOK_LT: return "<";
+        case TOK_GT: return ">";
+        case TOK_LTE: return "<=";
+        case TOK_GTE: return ">=";
+        default: return NULL;
+    }
+}
+
+static int is_cmp_tok(token_type_t t) {
+    return t == TOK_EQ || t == TOK_NEQ || t == TOK_LT ||
+           t == TOK_GT || t == TOK_LTE || t == TOK_GTE;
+}
+
+static node_t *parse_expr(parser_t *p) {
+    node_t *node = parse_addsub(p);
+
+    if (is_cmp_tok(p->cur->type)) {
+        const char *op = cmp_op_str(p->cur->type);
+        adv(p);
+        node_t *right = parse_addsub(p);
+        node_t *n = node_new(NODE_CMP);
+        n->cmp_op = strdup(op);
+        n->left = node;
+        n->right = right;
+        node = n;
+    }
+
+    return node;
+}
+
 static int starts_stmt(parser_t *p) {
     if (is_kw(p, "var")) return 1;
     if (is_kw(p, "print")) return 1;
     if (is_kw(p, "return")) return 1;
+    if (is_kw(p, "if")) return 1;
     if (p->cur->type == TOK_AT) return 1;
     if (p->cur->type == TOK_ID) return 1;
     return 0;
@@ -212,8 +248,36 @@ static node_t *parse_lvalue_tail(parser_t *p, node_t *base) {
     return mut;
 }
 
+static node_t *parse_block(parser_t *p) {
+    node_t *block = node_new(NODE_BLOCK);
+    while (starts_stmt(p) && !is_kw(p, "def") && !is_kw(p, "data") &&
+           !is_kw(p, "else")) {
+        node_t *stmt = parse_stmt(p);
+        node_add_child(block, stmt);
+    }
+    return block;
+}
+
 static node_t *parse_stmt(parser_t *p) {
     node_t *node;
+
+    if (is_kw(p, "if")) {
+        adv(p);
+        node_t *cond = parse_expr(p);
+        if (!is_kw(p, "then")) perror_exit("expected then");
+        adv(p);
+        node_t *then_block = parse_block(p);
+        node_t *else_block = NULL;
+        if (is_kw(p, "else")) {
+            adv(p);
+            else_block = parse_block(p);
+        }
+        node = node_new(NODE_IF);
+        node->left = cond;
+        node->right = then_block;
+        node->third = else_block;
+        return node;
+    }
 
     if (is_kw(p, "var")) {
         adv(p);
@@ -270,7 +334,6 @@ static node_t *parse_stmt(parser_t *p) {
             node_t *expr = parse_expr(p);
             node = node_new(NODE_MUTATION);
             node->left = base;
-            node->name = NULL;
             node->right = expr;
             return node;
         }
@@ -293,7 +356,6 @@ static node_t *parse_stmt(parser_t *p) {
         node_t *expr = parse_expr(p);
         node = node_new(NODE_MUTATION);
         node->left = base;
-        node->name = NULL;
         node->right = expr;
         return node;
     }
@@ -366,9 +428,7 @@ static node_t *parse_funcdef(parser_t *p) {
         if (p->cur->type != TOK_RPAREN) {
             for (;;) {
                 if (fn->param_count >= MAX_PARAMS) perror_exit("too many params");
-                int is_anchor_param = 0;
                 if (p->cur->type == TOK_AT) {
-                    is_anchor_param = 1;
                     adv(p);
                 }
                 expect_type(p, TOK_ID);
@@ -383,7 +443,6 @@ static node_t *parse_funcdef(parser_t *p) {
                 }
                 fn->param_names[fn->param_count] = pname;
                 fn->param_types[fn->param_count] = ptype;
-                (void)is_anchor_param;
                 fn->param_count++;
                 if (p->cur->type == TOK_COMMA) { adv(p); continue; }
                 break;

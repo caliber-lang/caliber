@@ -18,6 +18,9 @@ typedef enum {
     NODE_DATADEF,
     NODE_STRUCTLIT,
     NODE_FIELDACCESS,
+    NODE_CMP,
+    NODE_IF,
+    NODE_BLOCK,
 } node_type_t;
 
 typedef struct node node_t;
@@ -33,6 +36,7 @@ struct node {
     char op;
     node_t *left;
     node_t *right;
+    node_t *third;
     node_t **children;
     int child_count;
     int child_cap;
@@ -48,6 +52,8 @@ struct node {
     int field_count;
 
     char *type_name;
+
+    char *cmp_op;
 };
 
 node_t *node_new(node_type_t type);

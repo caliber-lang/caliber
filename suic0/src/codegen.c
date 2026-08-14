@@ -24,6 +24,7 @@ static char *string_pool[256];
 static int string_count;
 
 static char current_epilogue[128];
+static int label_counter;
 
 static const char *arg_regs[6] = {
     "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"
@@ -90,6 +91,16 @@ static void collect_symbols_stmt(node_t *stmt) {
     if (stmt->type == NODE_VARDECL || stmt->type == NODE_ANCHORDECL) {
         declare_symbol(stmt->name);
     }
+    if (stmt->type == NODE_IF) {
+        for (int i = 0; i < stmt->right->child_count; i++) {
+            collect_symbols_stmt(stmt->right->children[i]);
+        }
+        if (stmt->third) {
+            for (int i = 0; i < stmt->third->child_count; i++) {
+                collect_symbols_stmt(stmt->third->children[i]);
+            }
+        }
+    }
 }
 
 static void collect_symbols(node_t *fn) {
@@ -119,7 +130,10 @@ static void collect_strings(node_t *n) {
     }
     collect_strings(n->left);
     collect_strings(n->right);
+    collect_strings(n->third);
 }
+
+static void codegen_stmt(FILE *f, node_t *s);
 
 static void codegen_expr(FILE *f, node_t *e) {
     switch (e->type) {
@@ -161,6 +175,28 @@ static void codegen_expr(FILE *f, node_t *e) {
                     fprintf(f, "    idivq %%rbx\n");
                     break;
             }
+            break;
+        }
+        case NODE_CMP: {
+            codegen_expr(f, e->left);
+            fprintf(f, "    pushq %%rax\n");
+            codegen_expr(f, e->right);
+            fprintf(f, "    movq %%rax, %%rbx\n");
+            fprintf(f, "    popq %%rax\n");
+            fprintf(f, "    cmpq %%rbx, %%rax\n");
+            const char *setcc;
+            if (strcmp(e->cmp_op, "==") == 0) setcc = "sete";
+            else if (strcmp(e->cmp_op, "!=") == 0) setcc = "setne";
+            else if (strcmp(e->cmp_op, "<") == 0) setcc = "setl";
+            else if (strcmp(e->cmp_op, ">") == 0) setcc = "setg";
+            else if (strcmp(e->cmp_op, "<=") == 0) setcc = "setle";
+            else if (strcmp(e->cmp_op, ">=") == 0) setcc = "setge";
+            else {
+                fprintf(stderr, "codegen error: unknown comparator %s\n", e->cmp_op);
+                exit(1);
+            }
+            fprintf(f, "    %s %%al\n", setcc);
+            fprintf(f, "    movzbq %%al, %%rax\n");
             break;
         }
         case NODE_CALL: {
@@ -256,6 +292,24 @@ static void codegen_stmt(FILE *f, node_t *s) {
             fprintf(f, "    jmp %s\n", current_epilogue);
             break;
         }
+        case NODE_IF: {
+            int id = label_counter++;
+            codegen_expr(f, s->left);
+            fprintf(f, "    testq %%rax, %%rax\n");
+            fprintf(f, "    jz .Lelse%d\n", id);
+            for (int i = 0; i < s->right->child_count; i++) {
+                codegen_stmt(f, s->right->children[i]);
+            }
+            fprintf(f, "    jmp .Lendif%d\n", id);
+            fprintf(f, ".Lelse%d:\n", id);
+            if (s->third) {
+                for (int i = 0; i < s->third->child_count; i++) {
+                    codegen_stmt(f, s->third->children[i]);
+                }
+            }
+            fprintf(f, ".Lendif%d:\n", id);
+            break;
+        }
         default:
             fprintf(stderr, "codegen error: bad stmt node (type=%d)\n", s->type);
             exit(1);
@@ -265,6 +319,7 @@ static void codegen_stmt(FILE *f, node_t *s) {
 static void codegen_funcdef(FILE *f, node_t *fn) {
     sym_count = 0;
     anchor_type_count = 0;
+    label_counter = 0;
     collect_symbols(fn);
 
     int stack_size = sym_count * 8;
