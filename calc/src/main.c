@@ -87,7 +87,7 @@ static void compile_sui_ir(const char *filename) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: suic <file.sui|file.s-->\n");
+        fprintf(stderr, "usage: calc <file.sui|file.s-->\n");
         return 1;
     }
 
