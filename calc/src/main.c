@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "parser.h"
-#include "sui--.h"
-#include "sui--parse.h"
+#include "caliber--.h"
+#include "caliber--parse.h"
 #include "x86_64.h"
 
 static char *base_name(const char *filename) {
