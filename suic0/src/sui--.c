@@ -36,6 +36,13 @@ static void expr(FILE *f, node_t *n) {
             fprintf(f, "c %s\n", n->cmp_op);
             break;
 
+        case NODE_CALL:
+            for (int i = 0; i < n->child_count; i++) {
+                expr(f, n->children[i]);
+            }
+            fprintf(f, "x %s %d\n", n->name, n->child_count);
+            break;
+
         default:
             fprintf(stderr, "sui-- error: invalid expression %d\n", n->type);
             exit(1);
@@ -52,19 +59,33 @@ static void stmt(FILE *f, node_t *n) {
             break;
 
         case NODE_ANCHORDECL:
-            fprintf(f, "a %s %s\n", n->name, n->left->type_name);
+            fprintf(
+                f,
+                "a %s %s\n",
+                n->name,
+                n->left->type_name
+            );
 
             for (int i = 0; i < n->left->field_count; i++) {
                 expr(f, n->left->field_values[i]);
-                fprintf(f, "i %s %d\n",
+                fprintf(
+                    f,
+                    "i %s %d\n",
                     n->left->field_names[i],
-                    i);
+                    i
+                );
             }
             break;
 
         case NODE_MUTATION:
-            expr(f, n->right);
-            fprintf(f, "m %s\n", n->left->name);
+            if (n->left->type == NODE_FIELDACCESS) {
+                expr(f, n->left->left);
+                expr(f, n->right);
+                fprintf(f, "m %s\n", n->left->name);
+            } else {
+                expr(f, n->right);
+                fprintf(f, "v %s\n", n->left->name);
+            }
             break;
 
         case NODE_PRINT:
@@ -77,6 +98,10 @@ static void stmt(FILE *f, node_t *n) {
             fprintf(f, "q\n");
             break;
 
+        case NODE_IF:
+            fprintf(stderr, "sui-- error: if emission not implemented\n");
+            exit(1);
+
         default:
             fprintf(stderr, "sui-- error: invalid statement %d\n", n->type);
             exit(1);
@@ -84,10 +109,13 @@ static void stmt(FILE *f, node_t *n) {
 }
 
 static void func(FILE *f, node_t *n) {
-    fprintf(f, "f %s %d %d\n",
+    fprintf(
+        f,
+        "f %s %d %d\n",
         n->name,
         n->param_count,
-        n->child_count);
+        n->child_count
+    );
 
     for (int i = 0; i < n->child_count; i++) {
         stmt(f, n->children[i]);
