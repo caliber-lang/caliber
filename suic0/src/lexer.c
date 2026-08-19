@@ -92,8 +92,22 @@ static token_t *read_string(lexer_t *lex) {
     int i = 0;
 
     while (current_char(lex) != '"' && current_char(lex) != '\0') {
-        buf[i++] = current_char(lex);
-        advance(lex);
+        char c = current_char(lex);
+        if (c == '\\') {
+            advance(lex);
+            char esc = current_char(lex);
+            switch (esc) {
+                case 'n': buf[i++] = '\n'; break;
+                case 't': buf[i++] = '\t'; break;
+                case '\\': buf[i++] = '\\'; break;
+                case '"': buf[i++] = '"'; break;
+                default: buf[i++] = esc; break;
+            }
+            advance(lex);
+        } else {
+            buf[i++] = c;
+            advance(lex);
+        }
     }
     buf[i] = '\0';
 
