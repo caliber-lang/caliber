@@ -3,19 +3,25 @@
 #include <stdlib.h>
 #include <string.h>
 #include "parser.h"
-#include "codegen.h"
+#include "sui--.h"
+#include "sui--parse.h"
+#include "x86_64.h"
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "usage: suic <file.sui>\n");
-        return 1;
-    }
+static char *base_name(const char *filename) {
+    char *base = strdup(filename);
+    char *dot = strrchr(base, '.');
 
-    const char *filename = argv[1];
+    if (dot)
+        *dot = '\0';
+
+    return base;
+}
+
+static void compile_sui(const char *filename) {
     FILE *f = fopen(filename, "r");
     if (!f) {
-        perror("fopen");
-        return 1;
+        perror(filename);
+        exit(1);
     }
 
     fseek(f, 0, SEEK_END);
@@ -29,31 +35,69 @@ int main(int argc, char **argv) {
 
     node_t *ast = parser_parse(source);
 
-    char base[512];
-    strncpy(base, filename, sizeof(base) - 1);
-    base[sizeof(base) - 1] = '\0';
+    char *base = base_name(filename);
+    char path[600];
 
-    char *dot = strrchr(base, '.');
-    if (dot && strcmp(dot, ".sui") == 0) *dot = '\0';
+    snprintf(path, sizeof(path), "%s.s--", base);
 
-    char asm_path[600];
-    char bin_path[600];
-    snprintf(asm_path, sizeof(asm_path), "%s.s", base);
-    snprintf(bin_path, sizeof(bin_path), "%s", base);
+    FILE *out = fopen(path, "w");
+    if (!out) {
+        perror(path);
+        exit(1);
+    }
 
-    codegen_generate(ast, asm_path);
+    sui_emit(ast, out);
+    fclose(out);
 
-    char cmd[1400];
-    snprintf(cmd, sizeof(cmd), "cc -o %s %s", bin_path, asm_path);
-    int rc = system(cmd);
+    printf("generated %s\n", path);
 
-    if (rc != 0) {
-        fprintf(stderr, "assembly/link failed\n");
+    free(base);
+    free(source);
+}
+
+static void compile_sui_ir(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        perror(filename);
+        exit(1);
+    }
+
+    sui_program_t *program = sui_parse(f);
+    fclose(f);
+
+    char *base = base_name(filename);
+    char path[600];
+
+    snprintf(path, sizeof(path), "%s.s", base);
+
+    FILE *out = fopen(path, "w");
+    if (!out) {
+        perror(path);
+        exit(1);
+    }
+
+    x86_64_emit(program, out);
+    fclose(out);
+
+    printf("generated %s\n", path);
+
+    sui_free(program);
+    free(base);
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "usage: suic <file.sui|file.s-->\n");
         return 1;
     }
 
-    printf("compiled to %s\n", bin_path);
+    const char *file = argv[1];
+    const char *ext = strrchr(file, '.');
 
-    free(source);
+    if (ext && strcmp(ext, ".s--") == 0)
+        compile_sui_ir(file);
+    else
+        compile_sui(file);
+
     return 0;
 }
