@@ -13,7 +13,7 @@ sources = [
   'src/codegen.c',
   'src/utils.c',
   'src/caliber--.c',
-  'src/caliber---parse.c',
+  'src/caliber--parse.c',
   'src/x86_64.c',
 ]
 
