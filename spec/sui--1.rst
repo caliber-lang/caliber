@@ -1,9 +1,9 @@
-Sui-- 1
-=======
+Caliber-- 1
+===========
 
-Sui-- is the compiler-oriented intermediate language used by Sui 1.
+Caliber-- is the compiler-oriented intermediate language used by Caliber1.
 
-Sui-- is stack based. It is designed to be emitted quickly by a compiler
+Caliber-- is stack based. It is designed to be emitted quickly by a compiler
 and consumed quickly by a backend. It is not intended to be pleasant for
 humans to write.
 
@@ -129,7 +129,7 @@ Allocation
 a <slot> <type> <size>
     Allocate an object of ``type`` with ``size`` bytes.
 
-    Store the resulting anchor in ``slot``.
+    Store the resulting stake in ``slot``.
 
 Calls
 =====
@@ -158,14 +158,14 @@ q
 Design
 ======
 
-Sui-- intentionally contains little source-level information.
+Caliber-- intentionally contains little source-level information.
 
-It does not represent Sui syntax directly.
+It does not represent Caliber syntax directly.
 
-A Sui compiler should lower high-level constructs into simple stack
-operations before emitting Sui--.
+A Caliber compiler should lower high-level constructs into simple stack
+operations before emitting Caliber--.
 
-The backend is responsible for translating Sui-- into machine code.
+The backend is responsible for translating Caliber-- into machine code.
 
-Sui-- is an implementation detail of Sui 1 and is not intended to be
-stable across major Sui versions.
+Caliber-- is an implementation detail of Caliber1 and is not intended to be
+stable across major Caliber versions.
