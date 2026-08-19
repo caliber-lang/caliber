@@ -12,6 +12,9 @@ sources = [
   'src/typetab.c',
   'src/codegen.c',
   'src/utils.c',
+  'src/sui--.c',
+  'src/sui---parse.c',
+  'src/x86_64.c',
 ]
 
 executable('suic', sources,
