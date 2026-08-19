@@ -1,0 +1,29 @@
+data Point = {
+    x: Int,
+    y: Int
+}
+
+def add (a, b) -> Int =
+    var result <- a + b
+    return result
+
+def main =
+    @point <- alloc Point {
+        x: 10,
+        y: 20
+    }
+
+    var x <- @point.x
+    var y <- @point.y
+
+    var sum <- add(x, y)
+
+    print x
+    print y
+    print sum
+
+    @point.x := 100
+    print @point.x
+
+    var doubled <- @point.x * 2
+    print doubled

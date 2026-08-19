@@ -1,0 +1,9 @@
+def main =
+    var x <- 10
+    var y <- 20
+    var z <- x + y
+    var w <- z * 2
+    print x
+    print y
+    print z
+    print w
