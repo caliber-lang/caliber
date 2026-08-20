@@ -104,6 +104,13 @@ static void stmt(FILE *f, node_t *n) {
             fprintf(f, "q\n");
             break;
 
+        case NODE_CALL:
+            for (int i = 0; i < n->child_count; i++) {
+                expr(f, n->children[i]);
+            }
+            fprintf(f, "x %s %d\n", n->name, n->child_count);
+            break;
+
         case NODE_IF:
             fprintf(stderr, "caliber-- error: if emission not implemented\n");
             exit(1);

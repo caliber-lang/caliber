@@ -378,6 +378,15 @@ static node_t *parse_stmt(parser_t *p) {
     if (p->cur->type == TOK_ID) {
         char *name = strdup(p->cur->value);
         adv(p);
+
+        /* function call as statement: test() */
+        if (p->cur->type == TOK_LPAREN) {
+            node_t *call = node_new(NODE_CALL);
+            call->name = name;
+            node = parse_call_args(p, call);
+            return node;
+        }
+
         node_t *base = node_new(NODE_IDENT);
         base->name = name;
 
