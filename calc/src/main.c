@@ -87,14 +87,14 @@ static void compile_sui_ir(const char *filename) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: calc <file.sui|file.s-->\n");
+        fprintf(stderr, "usage: calc <file.cal|file.cal-->\n");
         return 1;
     }
 
     const char *file = argv[1];
     const char *ext = strrchr(file, '.');
 
-    if (ext && strcmp(ext, ".s--") == 0)
+    if (ext && strcmp(ext, ".cal--") == 0)
         compile_sui_ir(file);
     else
         compile_sui(file);
