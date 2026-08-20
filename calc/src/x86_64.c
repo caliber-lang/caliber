@@ -22,7 +22,9 @@ static void local_add(const char *name) {
         if (strcmp(locals[i].name, name) == 0) return;
     }
 
-    locals[local_count].name = strdup(name);
+    size_t len = strlen(name) + 1;
+    locals[local_count].name = malloc(len);
+    memcpy(locals[local_count].name, name, len);
     locals[local_count].offset = (local_count + 1) * 8;
     local_count++;
 }

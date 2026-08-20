@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -Wall -Wextra -std=c11 -O2
+CFLAGS = -Wall -Wextra -std=c99 -O2
 CPPFLAGS = -Isrc
 
 TARGET = calc
