@@ -3,6 +3,6 @@
 
 #include "caliber--parse.h"
 
-void x86_64_emit(sui_program_t *program, FILE *out);
+void x86_64_emit(caliber_program_t *program, FILE *out);
 
 #endif

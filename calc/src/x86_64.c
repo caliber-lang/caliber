@@ -39,11 +39,11 @@ static int local_find(const char *name) {
     exit(1);
 }
 
-static void collect_locals(sui_program_t *p) {
+static void collect_locals(caliber_program_t *p) {
     for (int i = 0; i < p->count; i++) {
-        sui_inst_t *in = &p->items[i];
+        caliber_inst_t *in = &p->items[i];
 
-        if (in->type == SI_LOAD || in->type == SI_STORE)
+        if (in->type == CI_LOAD || in->type == CI_STORE)
             local_add(in->a);
     }
 }
@@ -95,8 +95,8 @@ static void emit_cmp(FILE *f, const char *op) {
     fprintf(f, "    movzbq %%al, %%rax\n");
 }
 
-static void emit_function(FILE *f, sui_program_t *p, int *ip) {
-    sui_inst_t *fn = &p->items[*ip];
+static void emit_function(FILE *f, caliber_program_t *p, int *ip) {
+    caliber_inst_t *fn = &p->items[*ip];
 
     local_count = 0;
     collect_locals(p);
@@ -135,65 +135,65 @@ static void emit_function(FILE *f, sui_program_t *p, int *ip) {
     (*ip)++;
 
     for (; *ip < p->count; (*ip)++) {
-        sui_inst_t *in = &p->items[*ip];
+        caliber_inst_t *in = &p->items[*ip];
 
-        if (in->type == SI_END)
+        if (in->type == CI_END)
             break;
 
         switch (in->type) {
-            case SI_INT:
+            case CI_INT:
                 fprintf(f, "    movq $%ld, %%rax\n", in->value);
                 fprintf(f, "    pushq %%rax\n");
                 break;
 
-            case SI_LOAD:
+            case CI_LOAD:
                 fprintf(f, "    movq -%d(%%rbp), %%rax\n",
                         local_find(in->a));
                 fprintf(f, "    pushq %%rax\n");
                 break;
 
-            case SI_STORE:
+            case CI_STORE:
                 fprintf(f, "    popq %%rax\n");
                 fprintf(f, "    movq %%rax, -%d(%%rbp)\n",
                         local_find(in->a));
                 break;
 
-            case SI_BINOP:
+            case CI_BINOP:
                 fprintf(f, "    popq %%rax\n");
                 emit_binop(f, in->a);
                 fprintf(f, "    pushq %%rax\n");
                 break;
 
-            case SI_CMP:
+            case CI_CMP:
                 fprintf(f, "    popq %%rax\n");
                 emit_cmp(f, in->a);
                 fprintf(f, "    pushq %%rax\n");
                 break;
 
-            case SI_PRINT:
+            case CI_PRINT:
                 fprintf(f, "    popq %%rsi\n");
                 fprintf(f, "    leaq .LFMT_INT(%%rip), %%rdi\n");
                 fprintf(f, "    xorl %%eax, %%eax\n");
                 fprintf(f, "    call printf@PLT\n");
                 break;
 
-            case SI_RETURN:
+            case CI_RETURN:
                 fprintf(f, "    popq %%rax\n");
                 fprintf(f, "    leave\n");
                 fprintf(f, "    ret\n");
                 break;
 
-            case SI_JUMP:
+            case CI_JUMP:
                 fprintf(f, "    jmp %s\n", in->a);
                 break;
 
-            case SI_JUMP_ZERO:
+            case CI_JUMP_ZERO:
                 fprintf(f, "    popq %%rax\n");
                 fprintf(f, "    testq %%rax, %%rax\n");
                 fprintf(f, "    jz %s\n", in->a);
                 break;
 
-            case SI_LABEL:
+            case CI_LABEL:
                 fprintf(f, "%s:\n", in->a);
                 break;
 
@@ -209,7 +209,7 @@ static void emit_function(FILE *f, sui_program_t *p, int *ip) {
     free_locals();
 }
 
-void x86_64_emit(sui_program_t *p, FILE *out) {
+void x86_64_emit(caliber_program_t *p, FILE *out) {
     fprintf(out, "    .section .rodata\n");
     fprintf(out, ".LFMT_INT:\n");
     fprintf(out, "    .string \"%%ld\\n\"\n");
@@ -217,7 +217,7 @@ void x86_64_emit(sui_program_t *p, FILE *out) {
     fprintf(out, "    .section .text\n");
 
     for (int i = 0; i < p->count; i++) {
-        if (p->items[i].type == SI_FUNC)
+        if (p->items[i].type == CI_FUNC)
             emit_function(out, p, &i);
     }
 

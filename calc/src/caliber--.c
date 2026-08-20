@@ -15,7 +15,7 @@ static void expr(FILE *f, node_t *n) {
             break;
 
         case NODE_IDENT:
-        case NODE_ANCHORREF:
+        case NODE_STAKEREF:
             fprintf(f, "r %s\n", n->name);
             break;
 
@@ -44,7 +44,7 @@ static void expr(FILE *f, node_t *n) {
             break;
 
         default:
-            fprintf(stderr, "sui-- error: invalid expression %d\n", n->type);
+            fprintf(stderr, "caliber-- error: invalid expression %d\n", n->type);
             exit(1);
     }
 }
@@ -58,7 +58,7 @@ static void stmt(FILE *f, node_t *n) {
             fprintf(f, "v %s\n", n->name);
             break;
 
-        case NODE_ANCHORDECL:
+        case NODE_STAKEDECL:
             fprintf(
                 f,
                 "a %s %s\n",
@@ -99,11 +99,11 @@ static void stmt(FILE *f, node_t *n) {
             break;
 
         case NODE_IF:
-            fprintf(stderr, "sui-- error: if emission not implemented\n");
+            fprintf(stderr, "caliber-- error: if emission not implemented\n");
             exit(1);
 
         default:
-            fprintf(stderr, "sui-- error: invalid statement %d\n", n->type);
+            fprintf(stderr, "caliber-- error: invalid statement %d\n", n->type);
             exit(1);
     }
 }
@@ -124,7 +124,7 @@ static void func(FILE *f, node_t *n) {
     fprintf(f, "e\n");
 }
 
-void sui_emit(node_t *program, FILE *out) {
+void caliber_emit(node_t *program, FILE *out) {
     for (int i = 0; i < program->child_count; i++) {
         if (program->children[i]->type == NODE_FUNCDEF) {
             func(out, program->children[i]);

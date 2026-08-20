@@ -17,7 +17,7 @@ static char *base_name(const char *filename) {
     return base;
 }
 
-static void compile_sui(const char *filename) {
+static void compile_caliber(const char *filename) {
     FILE *f = fopen(filename, "r");
     if (!f) {
         perror(filename);
@@ -46,7 +46,7 @@ static void compile_sui(const char *filename) {
         exit(1);
     }
 
-    sui_emit(ast, out);
+    caliber_emit(ast, out);
     fclose(out);
 
     printf("generated %s\n", path);
@@ -55,14 +55,14 @@ static void compile_sui(const char *filename) {
     free(source);
 }
 
-static void compile_sui_ir(const char *filename) {
+static void compile_caliber_ir(const char *filename) {
     FILE *f = fopen(filename, "r");
     if (!f) {
         perror(filename);
         exit(1);
     }
 
-    sui_program_t *program = sui_parse(f);
+    caliber_program_t *program = caliber_parse(f);
     fclose(f);
 
     char *base = base_name(filename);
@@ -81,7 +81,7 @@ static void compile_sui_ir(const char *filename) {
 
     printf("generated %s\n", path);
 
-    sui_free(program);
+    caliber_free(program);
     free(base);
 }
 
@@ -95,9 +95,9 @@ int main(int argc, char **argv) {
     const char *ext = strrchr(file, '.');
 
     if (ext && strcmp(ext, ".cal--") == 0)
-        compile_sui_ir(file);
+        compile_caliber_ir(file);
     else
-        compile_sui(file);
+        compile_caliber(file);
 
     return 0;
 }

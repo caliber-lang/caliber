@@ -1,9 +1,9 @@
-#ifndef SUI_IR_H
-#define SUI_IR_H
+#ifndef CALIBER_IR_H
+#define CALIBER_IR_H
 
 #include "ast.h"
 #include <stdio.h>
 
-void sui_emit(node_t *program, FILE *out);
+void caliber_emit(node_t *program, FILE *out);
 
 #endif

@@ -109,7 +109,7 @@ static node_t *parse_factor(parser_t *p) {
     if (p->cur->type == TOK_AT) {
         adv(p);
         expect_type(p, TOK_ID);
-        node = node_new(NODE_ANCHORREF);
+        node = node_new(NODE_STAKEREF);
         node->name = strdup(p->cur->value);
         adv(p);
         return parse_postfix(p, node);
@@ -316,13 +316,13 @@ static node_t *parse_stmt(parser_t *p) {
             adv(p);
             node_t *lit = parse_struct_lit(p, type_name);
             free(type_name);
-            node = node_new(NODE_ANCHORDECL);
+            node = node_new(NODE_STAKEDECL);
             node->name = name;
             node->left = lit;
             return node;
         }
 
-        node_t *base = node_new(NODE_ANCHORREF);
+        node_t *base = node_new(NODE_STAKEREF);
         base->name = name;
 
         if (p->cur->type == TOK_DOT) {
@@ -338,7 +338,7 @@ static node_t *parse_stmt(parser_t *p) {
             return node;
         }
 
-        perror_exit("expected <-, :=, or . after anchor");
+        perror_exit("expected <-, :=, or . after stake");
     }
 
     if (p->cur->type == TOK_ID) {
