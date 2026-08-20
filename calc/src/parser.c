@@ -106,6 +106,19 @@ static node_t *parse_factor(parser_t *p) {
         adv(p);
         return node;
     }
+
+    /* ref @stake reference to a stake */
+    if (is_kw(p, "ref")) {
+        adv(p);
+        expect_type(p, TOK_AT);
+        adv(p);
+        expect_type(p, TOK_ID);
+        node = node_new(NODE_REFREF);
+        node->stake_name = strdup(p->cur->value);
+        adv(p);
+        return node;
+    }
+
     if (p->cur->type == TOK_AT) {
         adv(p);
         expect_type(p, TOK_ID);
@@ -286,6 +299,23 @@ static node_t *parse_stmt(parser_t *p) {
         adv(p);
         expect_type(p, TOK_COLONMINUS);
         adv(p);
+
+        /* check for ref keyword */
+        if (is_kw(p, "ref")) {
+            adv(p);
+            expect_type(p, TOK_AT);
+            adv(p);
+            expect_type(p, TOK_ID);
+            char *stake_name = strdup(p->cur->value);
+            adv(p);
+
+            node = node_new(NODE_REFDECL);
+            node->name = name;
+            node->stake_name = stake_name;
+            node->is_ref = 1;
+            return node;
+        }
+
         node_t *expr = parse_expr(p);
         node = node_new(NODE_VARDECL);
         node->name = name;
@@ -307,6 +337,7 @@ static node_t *parse_stmt(parser_t *p) {
         char *name = strdup(p->cur->value);
         adv(p);
 
+        /* @name <- alloc Type { ... } */
         if (p->cur->type == TOK_COLONMINUS) {
             adv(p);
             if (!is_kw(p, "alloc")) perror_exit("expected alloc");
@@ -322,23 +353,26 @@ static node_t *parse_stmt(parser_t *p) {
             return node;
         }
 
-        node_t *base = node_new(NODE_STAKEREF);
-        base->name = name;
-
+        /* @name.field := value */
         if (p->cur->type == TOK_DOT) {
+            node_t *base = node_new(NODE_STAKEREF);
+            base->name = name;
             return parse_lvalue_tail(p, base);
         }
 
+        /* @name := value */
         if (p->cur->type == TOK_COLONEQUAL) {
             adv(p);
             node_t *expr = parse_expr(p);
+            node_t *base = node_new(NODE_STAKEREF);
+            base->name = name;
             node = node_new(NODE_MUTATION);
             node->left = base;
             node->right = expr;
             return node;
         }
 
-        perror_exit("expected <-, :=, or . after stake");
+        perror_exit("expected <- or := or . after stake name");
     }
 
     if (p->cur->type == TOK_ID) {
