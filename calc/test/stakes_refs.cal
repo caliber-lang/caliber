@@ -1,0 +1,149 @@
+; Comprehensive stakes and references test suite
+
+data Point = {
+    x: Int,
+    y: Int
+}
+
+data Container = {
+    count: Int,
+    x: Int
+}
+
+; Test 1: Basic stake allocation and field access
+def test_basic_allocation() =
+    @p <- alloc Point { x: 10, y: 20 }
+    print @p.x
+    print @p.y
+
+; Test 2: Stake mutation through direct reference
+def test_direct_mutation() =
+    @p <- alloc Point { x: 5, y: 15 }
+    @p.x := 100
+    @p.y := 200
+    print @p.x
+    print @p.y
+
+; Test 3: Multiple references to same stake
+def test_multiple_refs() =
+    @p <- alloc Point { x: 42, y: 99 }
+    var ref1 <- ref @p
+    var ref2 <- ref @p
+    
+    @p.x := 777
+    
+    print @p.x
+
+; Test 4: Aliasing - mutation visible through all refs
+def test_aliasing() =
+    @p <- alloc Point { x: 1, y: 2 }
+    var r1 <- ref @p
+    var r2 <- ref @p
+    
+    @p.x := 10
+    print r1.x
+    print r2.x
+
+; Test 5: Multiple independent stakes
+def test_multiple_stakes() =
+    @p1 <- alloc Point { x: 1, y: 2 }
+    @p2 <- alloc Point { x: 3, y: 4 }
+    @p3 <- alloc Point { x: 5, y: 6 }
+    
+    print @p1.x
+    print @p2.x
+    print @p3.x
+    
+    @p1.x := 100
+    @p2.x := 200
+    @p3.x := 300
+    
+    print @p1.x
+    print @p2.x
+    print @p3.x
+
+; Test 6: Reference to each independent stake
+def test_multiple_refs_different_stakes() =
+    @p1 <- alloc Point { x: 10, y: 20 }
+    @p2 <- alloc Point { x: 30, y: 40 }
+    
+    var r1 <- ref @p1
+    var r2 <- ref @p2
+    
+    print r1.x
+    print r2.x
+    
+    @p1.x := 111
+    @p2.x := 222
+    
+    print r1.x
+    print r2.x
+
+; Test 7: Mutation isolation
+def test_mutation_isolation() =
+    @p1 <- alloc Point { x: 100, y: 100 }
+    @p2 <- alloc Point { x: 200, y: 200 }
+    
+    @p1.x := 999
+    
+    print @p1.x
+    print @p2.x
+
+; Test 8: Complex mutation sequence
+def test_complex_sequence() =
+    @p <- alloc Point { x: 0, y: 0 }
+    
+    @p.x := 1
+    print @p.x
+    
+    @p.y := 2
+    print @p.y
+    
+    @p.x := 10
+    print @p.x
+    
+    @p.y := 20
+    print @p.y
+
+; Test 9: Refs see mutations
+def test_refs_see_mutations() =
+    @p <- alloc Point { x: 5, y: 10 }
+    var r <- ref @p
+    
+    print r.x
+    print r.y
+    
+    @p.x := 50
+    @p.y := 100
+    
+    print r.x
+    print r.y
+
+; Main test runner
+def main() =
+    print 1
+    test_basic_allocation()
+    
+    print 2
+    test_direct_mutation()
+    
+    print 3
+    test_multiple_refs()
+    
+    print 4
+    test_aliasing()
+    
+    print 5
+    test_multiple_stakes()
+    
+    print 6
+    test_multiple_refs_different_stakes()
+    
+    print 7
+    test_mutation_isolation()
+    
+    print 8
+    test_complex_sequence()
+    
+    print 9
+    test_refs_see_mutations()
