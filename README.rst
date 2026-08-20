@@ -104,7 +104,7 @@ File extensions
 ===============
 
 - ``.cal`` is the extension for implementation files.
-- ``.kon`` is the extension for header files, containing only type and
+- ``.calh`` is the extension for header files, containing only type and
   function declarations, no implementations, imported by ``.cal`` files
   that need them.
 
@@ -149,7 +149,7 @@ The path there:
 
 The compiler pipeline itself is layered::
 
-    Caliber source (.cal / .kon)
+    Caliber source (.cal / .calh)
         -> Lexer
         -> Parser -> AST
         -> Type checker
