@@ -61,7 +61,7 @@ static token_t *read_id_or_keyword(lexer_t *lex) {
 
     static const char *keywords[] = {
         "def", "data", "var", "if", "then", "else", "match", "with",
-        "import", "type", "do", "for", "while", "let", "print", "alloc", "return", NULL
+        "import", "type", "do", "for", "while", "let", "print", "alloc", "return", "ref", NULL
     };
 
     for (int k = 0; keywords[k]; k++) {

@@ -9,13 +9,6 @@ typedef struct {
     int offset;
 } sym_t;
 
-typedef struct {
-    char *name;
-    char *type_name;
-    int is_ref;              /* 1 if reference, 0 if stake */
-    char *target_stake;      /* if ref, name of stake it references */
-} stake_info_t;
-
 static sym_t syms[256];
 static int sym_count;
 
@@ -161,7 +154,7 @@ static void codegen_expr(FILE *f, node_t *e) {
             break;
         }
         case NODE_REFREF: {
-            /* ref @stake: load the reference value (pointer + generation) */
+            /* ref @stake load the reference value (pointer + generation) */
             int off = find_symbol(e->stake_name);
             fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
             break;
@@ -237,7 +230,7 @@ static void codegen_stmt(FILE *f, node_t *s) {
             fprintf(f, "    movq %%rax, -%d(%%rbp)\n", off);
             if (s->left->type == NODE_STAKEREF || s->left->type == NODE_IDENT) {
                 const char *t = try_get_stake_type(s->left->name);
-                if (t) set_stake_type(s->name, t);
+                if (t) declare_stake(s->name, t, 0, NULL);
             }
             break;
         }
@@ -375,7 +368,7 @@ static void codegen_funcdef(FILE *f, node_t *fn) {
         int off = find_symbol(fn->param_names[i]);
         fprintf(f, "    movq %s, -%d(%%rbp)\n", arg_regs[i], off);
         if (fn->param_types[i]) {
-            set_stake_type(fn->param_names[i], fn->param_types[i]);
+            declare_stake(fn->param_names[i], fn->param_types[i], 0, NULL);
         }
     }
 

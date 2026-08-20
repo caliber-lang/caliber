@@ -77,6 +77,12 @@ static void stmt(FILE *f, node_t *n) {
             }
             break;
 
+        case NODE_REFDECL:
+            /* var ref <- ref @stake just load the stake pointer */
+            fprintf(f, "r %s\n", n->stake_name);
+            fprintf(f, "v %s\n", n->name);
+            break;
+
         case NODE_MUTATION:
             if (n->left->type == NODE_FIELDACCESS) {
                 expr(f, n->left->left);
