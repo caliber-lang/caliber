@@ -6,6 +6,7 @@ typedef enum {
     NODE_FUNCDEF,
     NODE_VARDECL,
     NODE_STAKEDECL,
+    NODE_REFDECL,
     NODE_MUTATION,
     NODE_PRINT,
     NODE_RETURN,
@@ -14,6 +15,7 @@ typedef enum {
     NODE_STRING,
     NODE_IDENT,
     NODE_STAKEREF,
+    NODE_REFREF,
     NODE_BINOP,
     NODE_DATADEF,
     NODE_STRUCTLIT,
@@ -22,6 +24,10 @@ typedef enum {
     NODE_IF,
     NODE_BLOCK,
 } node_type_t;
+
+/* backwards compat aliases for migration */
+#define NODE_ANCHORREF NODE_STAKEREF
+#define NODE_ANCHORDECL NODE_STAKEDECL
 
 typedef struct node node_t;
 
@@ -52,9 +58,13 @@ struct node {
     int field_count;
 
     char *type_name;
-
     char *cmp_op;
+
+    /* for stakes and references */
+    int is_ref;              /* 1 if this is a reference (vs direct stake) */
+    char *stake_name;        /* name of stake being referenced */
 };
+
 
 node_t *node_new(node_type_t type);
 void node_add_child(node_t *parent, node_t *child);

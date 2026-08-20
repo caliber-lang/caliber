@@ -9,16 +9,11 @@ typedef struct {
     int offset;
 } sym_t;
 
-typedef struct {
-    char *name;
-    char *type_name;
-} stake_type_t;
-
 static sym_t syms[256];
 static int sym_count;
 
-static stake_type_t stake_types[256];
-static int stake_type_count;
+static stake_info_t stakes[256];
+static int stake_count;
 
 static char *string_pool[256];
 static int string_count;
@@ -48,30 +43,35 @@ static int find_symbol(const char *name) {
     return -1;
 }
 
-static void set_stake_type(const char *name, const char *type_name) {
-    for (int i = 0; i < stake_type_count; i++) {
-        if (strcmp(stake_types[i].name, name) == 0) {
-            stake_types[i].type_name = (char *)type_name;
-            return;
-        }
+static void declare_stake(const char *name, const char *type_name, int is_ref, const char *target) {
+    for (int i = 0; i < stake_count; i++) {
+        if (strcmp(stakes[i].name, name) == 0) return;
     }
-    stake_types[stake_type_count].name = (char *)name;
-    stake_types[stake_type_count].type_name = (char *)type_name;
-    stake_type_count++;
+    stakes[stake_count].name = (char *)name;
+    stakes[stake_count].type_name = (char *)type_name;
+    stakes[stake_count].is_ref = is_ref;
+    stakes[stake_count].target_stake = target ? (char *)target : NULL;
+    stake_count++;
 }
 
-static const char *try_get_stake_type(const char *name) {
-    for (int i = 0; i < stake_type_count; i++) {
-        if (strcmp(stake_types[i].name, name) == 0) return stake_types[i].type_name;
+static stake_info_t *find_stake_info(const char *name) {
+    for (int i = 0; i < stake_count; i++) {
+        if (strcmp(stakes[i].name, name) == 0) return &stakes[i];
     }
     return NULL;
 }
 
 static const char *get_stake_type(const char *name) {
-    const char *t = try_get_stake_type(name);
-    if (t) return t;
+    stake_info_t *info = find_stake_info(name);
+    if (info && info->type_name) return info->type_name;
     fprintf(stderr, "codegen error: no known type for stake %s\n", name);
     exit(1);
+    return NULL;
+}
+
+static const char *try_get_stake_type(const char *name) {
+    stake_info_t *info = find_stake_info(name);
+    if (info) return info->type_name;
     return NULL;
 }
 
@@ -88,7 +88,7 @@ static const char *resolve_static_type(node_t *e) {
 }
 
 static void collect_symbols_stmt(node_t *stmt) {
-    if (stmt->type == NODE_VARDECL || stmt->type == NODE_STAKEDECL) {
+    if (stmt->type == NODE_VARDECL || stmt->type == NODE_STAKEDECL || stmt->type == NODE_REFDECL) {
         declare_symbol(stmt->name);
     }
     if (stmt->type == NODE_IF) {
@@ -150,6 +150,12 @@ static void codegen_expr(FILE *f, node_t *e) {
         }
         case NODE_STAKEREF: {
             int off = find_symbol(e->name);
+            fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
+            break;
+        }
+        case NODE_REFREF: {
+            /* ref @stake load the reference value (pointer + generation) */
+            int off = find_symbol(e->stake_name);
             fprintf(f, "    movq -%d(%%rbp), %%rax\n", off);
             break;
         }
@@ -224,7 +230,7 @@ static void codegen_stmt(FILE *f, node_t *s) {
             fprintf(f, "    movq %%rax, -%d(%%rbp)\n", off);
             if (s->left->type == NODE_STAKEREF || s->left->type == NODE_IDENT) {
                 const char *t = try_get_stake_type(s->left->name);
-                if (t) set_stake_type(s->name, t);
+                if (t) declare_stake(s->name, t, 0, NULL);
             }
             break;
         }
@@ -236,11 +242,15 @@ static void codegen_stmt(FILE *f, node_t *s) {
                 exit(1);
             }
 
+            /* allocate memory for object */
             fprintf(f, "    movl $%d, %%edi\n", info->total_size);
             fprintf(f, "    call malloc\n");
             fprintf(f, "    movq %%rax, %%rbx\n");
+            
+            /* store generation counter (initially 0) */
             fprintf(f, "    movq $0, (%%rbx)\n");
 
+            /* initialize fields */
             for (int i = 0; i < lit->field_count; i++) {
                 fprintf(f, "    pushq %%rbx\n");
                 codegen_expr(f, lit->field_values[i]);
@@ -250,9 +260,30 @@ static void codegen_stmt(FILE *f, node_t *s) {
                 fprintf(f, "    movq %%rcx, %d(%%rbx)\n", field_off);
             }
 
+            /* store stake (pointer) in local */
             int off = find_symbol(s->name);
             fprintf(f, "    movq %%rbx, -%d(%%rbp)\n", off);
-            set_stake_type(s->name, lit->type_name);
+            
+            declare_stake(s->name, lit->type_name, 0, NULL);
+            break;
+        }
+        case NODE_REFDECL: {
+            /* var ref_name <- ref @stake */
+            stake_info_t *target_info = find_stake_info(s->stake_name);
+            if (!target_info) {
+                fprintf(stderr, "codegen error: unknown stake %s\n", s->stake_name);
+                exit(1);
+            }
+
+            /* load stake pointer */
+            int stake_off = find_symbol(s->stake_name);
+            fprintf(f, "    movq -%d(%%rbp), %%rax\n", stake_off);
+
+            /* store reference (for now, just the pointer) */
+            int ref_off = find_symbol(s->name);
+            fprintf(f, "    movq %%rax, -%d(%%rbp)\n", ref_off);
+
+            declare_stake(s->name, target_info->type_name, 1, s->stake_name);
             break;
         }
         case NODE_MUTATION: {
@@ -318,7 +349,7 @@ static void codegen_stmt(FILE *f, node_t *s) {
 
 static void codegen_funcdef(FILE *f, node_t *fn) {
     sym_count = 0;
-    stake_type_count = 0;
+    stake_count = 0;
     label_counter = 0;
     collect_symbols(fn);
 
@@ -337,7 +368,7 @@ static void codegen_funcdef(FILE *f, node_t *fn) {
         int off = find_symbol(fn->param_names[i]);
         fprintf(f, "    movq %s, -%d(%%rbp)\n", arg_regs[i], off);
         if (fn->param_types[i]) {
-            set_stake_type(fn->param_names[i], fn->param_types[i]);
+            declare_stake(fn->param_names[i], fn->param_types[i], 0, NULL);
         }
     }
 
